@@ -29,7 +29,25 @@ export function CodeEditor({
     editorRef.current = editor;
     monacoRef.current = monaco;
     editor.focus();
-  }, []);
+
+    // Code Stopper: Intercept Enter key to block new lines when there are syntax errors
+    editor.addCommand(monaco.KeyCode.Enter, () => {
+      const model = editor.getModel();
+      if (model) {
+        const markers = monaco.editor.getModelMarkers({ resource: model.uri });
+        const errors = markers.filter((m) => m.severity >= 8); // Error severity
+        
+        if (errors.length > 0) {
+          // Block the Enter key - don't insert new line
+          // Optionally trigger validation feedback
+          onValidationChange?.(false, `Line ${errors[0].startLineNumber}: ${errors[0].message}`);
+          return;
+        }
+      }
+      // No errors - allow normal Enter behavior
+      editor.trigger('keyboard', 'type', { text: '\n' });
+    });
+  }, [onValidationChange]);
 
   const handleEditorChange: OnChange = useCallback(
     (newValue) => {
