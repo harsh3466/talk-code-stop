@@ -15,8 +15,8 @@ const languageTemplates: Record<string, string> = {
   cpp: `// C++ Code\n#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << "Hello, World!" << endl;\n    return 0;\n}`,
 };
 
-// Real-time syntax validator for code stopper
-function validateSyntax(code: string): { isValid: boolean; error?: string } {
+// Real-time syntax validator for code stopper - language-aware
+function validateSyntax(code: string, language: string): { isValid: boolean; error?: string } {
   const lines = code.split('\n');
   let parenCount = 0;
   let bracketCount = 0;
@@ -26,6 +26,12 @@ function validateSyntax(code: string): { isValid: boolean; error?: string } {
 
   for (let lineNum = 0; lineNum < lines.length; lineNum++) {
     const line = lines[lineNum];
+    const trimmedLine = line.trim();
+    
+    // Skip empty lines and comments
+    if (!trimmedLine || trimmedLine.startsWith('//') || trimmedLine.startsWith('#') || trimmedLine.startsWith('/*')) {
+      continue;
+    }
     
     for (let i = 0; i < line.length; i++) {
       const char = line[i];
@@ -72,6 +78,41 @@ function validateSyntax(code: string): { isValid: boolean; error?: string } {
     if (inString) {
       return { isValid: false, error: `Line ${stringStartLine}: Unclosed string literal` };
     }
+
+    // Language-specific: Check for missing semicolons in C++ and Java
+    if (language === 'cpp' || language === 'java') {
+      // Skip lines that shouldn't end with semicolon
+      const shouldSkip = 
+        trimmedLine.endsWith('{') ||
+        trimmedLine.endsWith('}') ||
+        trimmedLine.startsWith('#') ||
+        trimmedLine.startsWith('//') ||
+        trimmedLine === '' ||
+        trimmedLine.endsWith(':') ||
+        trimmedLine.startsWith('public class') ||
+        trimmedLine.startsWith('class') ||
+        trimmedLine.includes('if') && trimmedLine.endsWith(')') ||
+        trimmedLine.includes('else') ||
+        trimmedLine.includes('for') && trimmedLine.endsWith(')') ||
+        trimmedLine.includes('while') && trimmedLine.endsWith(')') ||
+        trimmedLine.startsWith('using namespace') && trimmedLine.endsWith(';') ||
+        trimmedLine.endsWith(';');
+
+      // Check if line is a statement that needs semicolon
+      const isStatement = 
+        (trimmedLine.includes('cout') || 
+         trimmedLine.includes('cin') ||
+         trimmedLine.includes('System.out') ||
+         trimmedLine.includes('return') ||
+         trimmedLine.includes('=') ||
+         (trimmedLine.includes('(') && trimmedLine.includes(')'))) &&
+        !trimmedLine.endsWith('{') &&
+        !trimmedLine.endsWith('}');
+
+      if (isStatement && !trimmedLine.endsWith(';') && !shouldSkip) {
+        return { isValid: false, error: `Line ${lineNum + 1}: Missing semicolon ';' at end of statement` };
+      }
+    }
   }
 
   if (parenCount > 0) {
@@ -106,7 +147,7 @@ export function CodeEditor({
     // Code Stopper: Intercept Enter key to block new lines when there are syntax errors
     editor.addCommand(monaco.KeyCode.Enter, () => {
       const currentCode = editor.getValue();
-      const validation = validateSyntax(currentCode);
+      const validation = validateSyntax(currentCode, language);
       
       if (!validation.isValid) {
         // Block the Enter key - don't insert new line
@@ -119,15 +160,15 @@ export function CodeEditor({
       setHasError(false);
       editor.trigger('keyboard', 'type', { text: '\n' });
     });
-  }, [onValidationChange]);
+  }, [onValidationChange, language]);
 
   const handleEditorChange: OnChange = useCallback(
     (newValue) => {
       const val = newValue || "";
       onChange(val);
 
-      // Real-time syntax validation
-      const validation = validateSyntax(val);
+      // Real-time syntax validation with language awareness
+      const validation = validateSyntax(val, language);
       
       if (!validation.isValid) {
         setHasError(true);
@@ -137,7 +178,7 @@ export function CodeEditor({
         onValidationChange?.(true);
       }
     },
-    [onChange, onValidationChange]
+    [onChange, onValidationChange, language]
   );
 
   const getMonacoLanguage = (lang: string) => {
