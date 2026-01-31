@@ -23,7 +23,7 @@ export function CompilerHeader({
             <Zap className="h-6 w-6 text-primary" />
           </div>
           <div>
-            <h1 className="text-xl font-bold gradient-text">VoiceCode IDE</h1>
+            <h1 className="text-xl font-bold gradient-text">VictoryIsOurs</h1>
             <p className="text-xs text-muted-foreground">
               AI-Powered Interactive Compiler
             </p>
