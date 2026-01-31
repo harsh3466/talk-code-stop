@@ -5,26 +5,27 @@ import { SpeechToCode } from "@/components/compiler/SpeechToCode";
 import { OutputPanel } from "@/components/compiler/OutputPanel";
 import { ActionBar } from "@/components/compiler/ActionBar";
 import { ErrorBanner } from "@/components/compiler/ErrorBanner";
+import { useCodeExecution } from "@/hooks/useCodeExecution";
 import { cn } from "@/lib/utils";
 
 const Index = () => {
   const [language, setLanguage] = useState("python");
   const [code, setCode] = useState(languageTemplates.python);
-  const [output, setOutput] = useState("");
-  const [isRunning, setIsRunning] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [validationStatus, setValidationStatus] = useState<"valid" | "error" | "idle">("idle");
   const [errorMessage, setErrorMessage] = useState<string | undefined>();
   const [showError, setShowError] = useState(false);
 
+  const { isRunning, output, executeCode, stopExecution, clearOutput } = useCodeExecution();
+
   // Update code when language changes
   useEffect(() => {
     setCode(languageTemplates[language] || "");
-    setOutput("");
+    clearOutput();
     setValidationStatus("idle");
     setErrorMessage(undefined);
     setShowError(false);
-  }, [language]);
+  }, [language, clearOutput]);
 
   const handleValidationChange = useCallback((isValid: boolean, error?: string) => {
     if (isValid) {
@@ -44,29 +45,20 @@ const Index = () => {
   }, []);
 
   const handleRun = useCallback(async () => {
-    setIsRunning(true);
-    setOutput("Compiling and running...\n");
-
-    // Simulate compilation and execution
-    setTimeout(() => {
-      const simulatedOutput = `[${language.toUpperCase()} Compiler] Compilation successful!\n\n> Running program...\n\n${getSimulatedOutput(language, code)}\n\n[Process completed with exit code 0]`;
-      setOutput(simulatedOutput);
-      setIsRunning(false);
-    }, 1500);
-  }, [language, code]);
+    await executeCode(code, language);
+  }, [executeCode, code, language]);
 
   const handleStop = useCallback(() => {
-    setIsRunning(false);
-    setOutput((prev) => prev + "\n\n[Process terminated by user]");
-  }, []);
+    stopExecution();
+  }, [stopExecution]);
 
   const handleClear = useCallback(() => {
     setCode(languageTemplates[language] || "");
-    setOutput("");
+    clearOutput();
     setValidationStatus("idle");
     setErrorMessage(undefined);
     setShowError(false);
-  }, [language]);
+  }, [language, clearOutput]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -136,26 +128,5 @@ const Index = () => {
     </div>
   );
 };
-
-// Helper function to simulate output based on code patterns
-function getSimulatedOutput(language: string, code: string): string {
-  // Check for common patterns in the code
-  if (code.includes('print("Hello') || code.includes("println(")) {
-    return "Hello, World!";
-  }
-  if (code.includes("cout <<")) {
-    return "Hello, World!";
-  }
-  if (code.includes("for") && (code.includes("range") || code.includes("int i"))) {
-    return "0\n1\n2\n3\n4";
-  }
-  if (code.includes("fibonacci") || code.includes("fib")) {
-    return "0, 1, 1, 2, 3, 5, 8, 13, 21, 34";
-  }
-  if (code.includes("factorial")) {
-    return "120";
-  }
-  return "Program executed successfully.";
-}
 
 export default Index;
