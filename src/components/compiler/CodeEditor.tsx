@@ -1,4 +1,4 @@
-import { useRef, useCallback } from "react";
+import { useRef, useCallback, useState } from "react";
 import Editor, { OnMount, OnChange, Monaco } from "@monaco-editor/react";
 
 interface CodeEditorProps {
@@ -15,6 +15,78 @@ const languageTemplates: Record<string, string> = {
   cpp: `// C++ Code\n#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << "Hello, World!" << endl;\n    return 0;\n}`,
 };
 
+// Real-time syntax validator for code stopper
+function validateSyntax(code: string): { isValid: boolean; error?: string } {
+  const lines = code.split('\n');
+  let parenCount = 0;
+  let bracketCount = 0;
+  let braceCount = 0;
+  let inString: string | null = null;
+  let stringStartLine = 0;
+
+  for (let lineNum = 0; lineNum < lines.length; lineNum++) {
+    const line = lines[lineNum];
+    
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      const prevChar = i > 0 ? line[i - 1] : '';
+
+      // Handle escape sequences
+      if (prevChar === '\\' && inString) continue;
+
+      // Handle string literals
+      if ((char === '"' || char === "'") && !inString) {
+        inString = char;
+        stringStartLine = lineNum + 1;
+      } else if (char === inString) {
+        inString = null;
+      }
+
+      // Only count brackets outside of strings
+      if (!inString) {
+        if (char === '(') parenCount++;
+        else if (char === ')') {
+          parenCount--;
+          if (parenCount < 0) {
+            return { isValid: false, error: `Line ${lineNum + 1}: Unexpected closing parenthesis ')'` };
+          }
+        }
+        else if (char === '[') bracketCount++;
+        else if (char === ']') {
+          bracketCount--;
+          if (bracketCount < 0) {
+            return { isValid: false, error: `Line ${lineNum + 1}: Unexpected closing bracket ']'` };
+          }
+        }
+        else if (char === '{') braceCount++;
+        else if (char === '}') {
+          braceCount--;
+          if (braceCount < 0) {
+            return { isValid: false, error: `Line ${lineNum + 1}: Unexpected closing brace '}'` };
+          }
+        }
+      }
+    }
+
+    // Check for unclosed string at end of line (single-line string languages)
+    if (inString) {
+      return { isValid: false, error: `Line ${stringStartLine}: Unclosed string literal` };
+    }
+  }
+
+  if (parenCount > 0) {
+    return { isValid: false, error: `Missing ${parenCount} closing parenthesis ')'` };
+  }
+  if (bracketCount > 0) {
+    return { isValid: false, error: `Missing ${bracketCount} closing bracket ']'` };
+  }
+  if (braceCount > 0) {
+    return { isValid: false, error: `Missing ${braceCount} closing brace '}'` };
+  }
+
+  return { isValid: true };
+}
+
 export function CodeEditor({
   language,
   value,
@@ -24,6 +96,7 @@ export function CodeEditor({
 }: CodeEditorProps) {
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
+  const [hasError, setHasError] = useState(false);
 
   const handleEditorMount: OnMount = useCallback((editor, monaco) => {
     editorRef.current = editor;
@@ -32,19 +105,18 @@ export function CodeEditor({
 
     // Code Stopper: Intercept Enter key to block new lines when there are syntax errors
     editor.addCommand(monaco.KeyCode.Enter, () => {
-      const model = editor.getModel();
-      if (model) {
-        const markers = monaco.editor.getModelMarkers({ resource: model.uri });
-        const errors = markers.filter((m) => m.severity >= 8); // Error severity
-        
-        if (errors.length > 0) {
-          // Block the Enter key - don't insert new line
-          // Optionally trigger validation feedback
-          onValidationChange?.(false, `Line ${errors[0].startLineNumber}: ${errors[0].message}`);
-          return;
-        }
+      const currentCode = editor.getValue();
+      const validation = validateSyntax(currentCode);
+      
+      if (!validation.isValid) {
+        // Block the Enter key - don't insert new line
+        setHasError(true);
+        onValidationChange?.(false, validation.error);
+        return;
       }
+      
       // No errors - allow normal Enter behavior
+      setHasError(false);
       editor.trigger('keyboard', 'type', { text: '\n' });
     });
   }, [onValidationChange]);
@@ -55,22 +127,14 @@ export function CodeEditor({
       onChange(val);
 
       // Real-time syntax validation
-      if (editorRef.current && monacoRef.current) {
-        const model = editorRef.current.getModel();
-        if (model) {
-          // Monaco provides markers for syntax errors
-          setTimeout(() => {
-            const markers = monacoRef.current?.editor.getModelMarkers({ resource: model.uri }) || [];
-            const errors = markers.filter((m) => m.severity >= 8); // Error severity
-            
-            if (errors.length > 0) {
-              const firstError = errors[0];
-              onValidationChange?.(false, `Line ${firstError.startLineNumber}: ${firstError.message}`);
-            } else {
-              onValidationChange?.(true);
-            }
-          }, 300);
-        }
+      const validation = validateSyntax(val);
+      
+      if (!validation.isValid) {
+        setHasError(true);
+        onValidationChange?.(false, validation.error);
+      } else {
+        setHasError(false);
+        onValidationChange?.(true);
       }
     },
     [onChange, onValidationChange]
